@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Reel Counter</string>
+
+    <string name="service_description">Counts how many reels/shorts you scroll through.</string>
+</resources>
