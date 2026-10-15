@@ -14,62 +14,71 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
-import gupta.abhishek.reelcounter.domain.domain.ReelRepository
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
+import gupta.abhishek.reelcounter.domain.domain.ReelRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 import kotlin.math.abs
 
-@AndroidEntryPoint   // lets Hilt inject things into this service
+@AndroidEntryPoint // lets Hilt inject things into this service
 class ReelCounterService : AccessibilityService() {
-
-    @Inject lateinit var repository: ReelRepository               // given by Hilt
+    @Inject lateinit var repository: ReelRepository // given by Hilt
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-
-    private var onReelScreen = false      // true only while a Reels/Shorts screen is open
-    private var onCountingScreen = false  // true while the counter is visible and counting
-    private var inSupportedApp = false    // true while Instagram/YouTube is on screen
+    private var onReelScreen = false // true only while a Reels/Shorts screen is open
+    private var onCountingScreen = false // true while the counter is visible and counting
+    private var inSupportedApp = false // true while Instagram/YouTube is on screen
     private var lastCheckTime = 0L
-    private var lastExitTime = 0L          // when we last left a Reels/Shorts screen
-    private var currentPkg = ""           // app we are in right now
+    private var lastExitTime = 0L // when we last left a Reels/Shorts screen
+    private var currentPkg = "" // app we are in right now
     private lateinit var counterText: TextView
     private lateinit var windowManager: WindowManager
 
-    private val lastIndex = HashMap<String, Int>()   // last item number, per app + view
-    private var gesturePixels = 0                    // distance scrolled in the current swipe
-    private var gesturePkg = ""                      // app of the current swipe
+    private val lastIndex = HashMap<String, Int>() // last item number, per app + view
+    private var gesturePixels = 0 // distance scrolled in the current swipe
+    private var gesturePkg = "" // app of the current swipe
     private val handler = Handler(Looper.getMainLooper())
+
+
+
+
+
 
     // Delay (ms) after a count during which the SAME app can't count again.
     // Instagram needs it because it sometimes sends extra events for one reel.
     // YouTube works fine, so 0 = no delay. Change 600 if it's too short/long.
-    private val cooldownMs = mapOf(
-        "com.instagram.android" to 600L,
-        "com.google.android.youtube" to 0L
-    )
+    private val cooldownMs =
+        mapOf(
+            "com.instagram.android" to 800L,
+            "com.google.android.youtube" to 0L,
+        )
     private val lastCountTime = HashMap<String, Long>()
     private val finishSwipe = Runnable { finishSwipeAndCount() }
 
     // Only these two apps for now
-    private val shortVideoApps = setOf(
-        "com.instagram.android",
-        "com.google.android.youtube"
-    )
+    private val shortVideoApps =
+        setOf(
+            "com.instagram.android",
+            "com.google.android.youtube",
+        )
+
+    private var lastWeakKey: String? = null
+    private var lastWeakTime = 0L
 
     // If ANY of these views exist on screen, we are on a Reels/Shorts screen.
     // These IDs are best guesses and can change when Instagram/YouTube update.
-    private val reelScreenIds = listOf(
-        "com.instagram.android:id/clips_viewer_view_pager",
-        "com.instagram.android:id/clips_swipe_refresh_container",
-        "com.google.android.youtube:id/reel_recycler",
-        "com.google.android.youtube:id/reel_player_page_container"
-    )
+    private val reelScreenIds =
+        listOf(
+            "com.instagram.android:id/clips_viewer_view_pager",
+            "com.instagram.android:id/clips_swipe_refresh_container",
+            "com.google.android.youtube:id/reel_recycler",
+            "com.google.android.youtube:id/reel_player_page_container",
+        )
 
     // true = after every counted reel, print everything visible on screen to Logcat (tag: ReelDump).
     // Used once to find where the creator name and caption live. Turn off afterwards.
@@ -78,7 +87,7 @@ class ReelCounterService : AccessibilityService() {
     // A reel counts as WATCHED only if the user stays on it this long (in ms).
     // Swiping away sooner = not counted. Change 2000 to make it stricter or looser.
     private val minWatchMs = 800L
-    private var countSeq = 0   // goes up with every count; tells us if the user already swiped again
+    private var countSeq = 0 // goes up with every count; tells us if the user already swiped again
 
     // true  = count ONLY on the Reels/Shorts screen. Feed scrolling (home feed, search,
     //         profile, etc.) is NOT counted and the counter is hidden there.
@@ -91,10 +100,11 @@ class ReelCounterService : AccessibilityService() {
     private val onlyCountReelSwipes = true
 
     // The scrolling view that moves from one reel to the next (best guesses, can change with updates)
-    private val reelPagerIds = listOf(
-        "com.instagram.android:id/clips_viewer_view_pager",
-        "com.google.android.youtube:id/reel_recycler"
-    )
+    private val reelPagerIds =
+        listOf(
+            "com.instagram.android:id/clips_viewer_view_pager",
+            "com.google.android.youtube:id/reel_recycler",
+        )
 
     override fun onServiceConnected() {
         showCounter()
@@ -110,23 +120,26 @@ class ReelCounterService : AccessibilityService() {
     private fun showCounter() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        counterText = TextView(this).apply {
-            text = "Reels: 0"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xCC000000.toInt())
-            setPadding(32, 16, 32, 16)
-            visibility = View.GONE            // hidden until we reach Reels/Shorts
-        }
+        counterText =
+            TextView(this).apply {
+                text = "Reels: 0"
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setBackgroundColor(0xCC000000.toInt())
+                setPadding(32, 16, 32, 16)
+                alpha = 0f                  // <-- add this
+                visibility = View.GONE
+            }
 
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        val params =
+            WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT
-        )
+                PixelFormat.TRANSLUCENT,
+            )
         params.gravity = Gravity.TOP or Gravity.END
         params.y = 200
         windowManager.addView(counterText, params)
@@ -137,19 +150,28 @@ class ReelCounterService : AccessibilityService() {
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> updateOverlay()
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            -> updateOverlay()
 
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> countScroll(event)
         }
     }
 
+    private val recheck = Runnable { updateOverlay(force = true) }
+
     // Shows/hides the counter depending on the screen and the variable above
-    private fun updateOverlay() {
+    private fun updateOverlay(force: Boolean = false) {
         val now = SystemClock.uptimeMillis()
-        if (now - lastCheckTime < 200) return   // don't check too often
+        if (!force && now - lastCheckTime < 200) {
+            // don't drop this event: check again shortly so the final state is never missed
+            handler.removeCallbacks(recheck)
+            handler.postDelayed(recheck, 200)
+            return
+        }
+        handler.removeCallbacks(recheck)
         lastCheckTime = now
 
-        val nowOnReels = isOnReelScreen()       // also updates inSupportedApp
+        val nowOnReels = isOnReelScreen() // also updates inSupportedApp
         val nowCounting = if (onlyCountReelsAndShorts) nowOnReels else inSupportedApp
         if (nowOnReels == onReelScreen && nowCounting == onCountingScreen) return
 
@@ -159,15 +181,13 @@ class ReelCounterService : AccessibilityService() {
 
         onReelScreen = nowOnReels
         onCountingScreen = nowCounting
-        counterText.visibility = if (nowCounting) View.VISIBLE else View.GONE
+        setCounterVisible(nowCounting) // fade in/out instead of instant show/hide
 
-        if (enteredCounting) {                   // fresh start each time we enter
+        if (enteredCounting) { // fresh start each time we enter
             lastIndex.clear()
             gesturePixels = 0
         }
         if (enteredReels) {
-            // the reel we land on counts too (even if the user never scrolls).
-            // Skip if we only left for under 2 seconds (e.g. comments panel opening)
             if (now - lastExitTime > 2000) addReels(currentPkg, 1)
         }
         if (leftReels) lastExitTime = now
@@ -183,14 +203,23 @@ class ReelCounterService : AccessibilityService() {
         inSupportedApp = true
         currentPkg = pkg
 
+        val screenHeight = resources.displayMetrics.heightPixels
+        val rect = android.graphics.Rect()
+
         for (id in reelScreenIds) {
-            if (root.findAccessibilityNodeInfosByViewId(id).isNotEmpty()) return true
+            val nodes = root.findAccessibilityNodeInfosByViewId(id)
+            for (node in nodes) {
+                if (!node.isVisibleToUser) continue // hidden/cached view = not on Reels
+                node.getBoundsInScreen(rect)
+                // a real Reels/Shorts page fills most of the screen
+                if (rect.height() > screenHeight * 0.6f) return true
+            }
         }
         return false
     }
 
     private fun countScroll(event: AccessibilityEvent) {
-        if (!onCountingScreen) return            // counter is hidden = don't count
+        if (!onCountingScreen) return // counter is hidden = don't count
 
         val pkg = event.packageName?.toString() ?: return
         if (pkg !in shortVideoApps) return
@@ -208,7 +237,7 @@ class ReelCounterService : AccessibilityService() {
 
         // WAY 1: the app tells us the item number -> use ONLY this (5 -> 15 = 10 reels)
         if (index >= 0) {
-            val key = "$pkg|${event.className}"   // separate memory for each scrolling view
+            val key = "$pkg|${event.className}" // separate memory for each scrolling view
             val last = lastIndex[key]
             lastIndex[key] = index
             if (last != null && index != last) addReels(pkg, abs(index - last))
@@ -220,7 +249,7 @@ class ReelCounterService : AccessibilityService() {
             gesturePkg = pkg
             gesturePixels += deltaY
             handler.removeCallbacks(finishSwipe)
-            handler.postDelayed(finishSwipe, 250)   // 250 ms with no scroll = swipe finished
+            handler.postDelayed(finishSwipe, 250) // 250 ms with no scroll = swipe finished
         }
     }
 
@@ -233,7 +262,10 @@ class ReelCounterService : AccessibilityService() {
         addReels(gesturePkg, reels)
     }
 
-    private fun addReels(pkg: String, n: Int) {
+    private fun addReels(
+        pkg: String,
+        n: Int,
+    ) {
         if (n <= 0) return
 
         // delay check: ignore if this app counted too recently
@@ -258,17 +290,30 @@ class ReelCounterService : AccessibilityService() {
             val root = rootInActiveWindow ?: return@launch
             if (root.packageName?.toString() != pkg) return@launch
 
-            val info = ReelKeyReader.read(root)
+            var info = ReelKeyReader.read(root)
 
-            // 1) ads and unidentified reels: nothing is saved
+            // YouTube overlay sometimes loads late: retry up to 2 more times
+            var tries = 0
+            while (info.key == null && !info.isAd && tries < 2) {
+                delay(500)
+                if (seq != countSeq) return@launch
+                val r = rootInActiveWindow ?: return@launch
+                info = ReelKeyReader.read(r)
+                tries++
+            }
             if (info.isAd) {
                 logReel(pkg, info, "NOT counted (ad)")
                 return@launch
             }
-            val key = info.key
+            var key = info.key // var, because a weak key gets changed below
             if (key == null) {
                 logReel(pkg, info, "NOT counted (reel not identified)")
                 return@launch
+            }
+
+            // creator-only ID: trust the swipe, every swipe is a new reel
+            if (info.weak) {
+                key = "$key|${SystemClock.uptimeMillis()}"
             }
 
             // 2) save it; a reel already in the database is not added again, counter stays the same
@@ -276,16 +321,18 @@ class ReelCounterService : AccessibilityService() {
             logReel(pkg, info, if (isNew) "COUNTED (new reel)" else "NOT counted (already saved)")
         }
 
-        if (debugDump) handler.postDelayed({ dumpScreen() }, 800)  // wait for the new reel to load
+        if (debugDump) handler.postDelayed({ dumpScreen() }, 800) // wait for the new reel to load
     }
-
     // one line with everything, filter Logcat by: ReelInfo
-    private fun logReel(pkg: String, info: ReelInfo, verdict: String) {
+    private fun logReel(
+        pkg: String,
+        info: ReelInfo,
+        verdict: String,
+    ) {
         Log.d(
             "ReelInfo",
-            "app=$pkg | creator=${info.creator} | caption=${info.caption?.take(80)} " +
-                    "| ad=${info.isAd} (${info.adLabel}) | key=${info.key?.take(12)} | $verdict"
-        )
+            "app=$pkg | creator=${info.creator} | caption=${info.caption?.take(80)} | audio=${info.audio?.take(40)} " +
+                    "| ad=${info.isAd} (${info.adLabel}) | weak=${info.weak} | key=${info.key?.take(12)} | $verdict",)
     }
 
     // ---------- debug: print the screen's views ----------
@@ -295,7 +342,10 @@ class ReelCounterService : AccessibilityService() {
         dumpNode(root, 0)
     }
 
-    private fun dumpNode(node: AccessibilityNodeInfo?, depth: Int) {
+    private fun dumpNode(
+        node: AccessibilityNodeInfo?,
+        depth: Int,
+    ) {
         if (node == null) return
         val id = node.viewIdResourceName
         val text = node.text?.toString()
@@ -306,15 +356,39 @@ class ReelCounterService : AccessibilityService() {
         for (i in 0 until node.childCount) dumpNode(node.getChild(i), depth + 1)
     }
 
-    private fun platformName(pkg: String): String =
-        if (pkg == "com.instagram.android") "Instagram Reels" else "YouTube Shorts"
+    private fun platformName(pkg: String): String = if (pkg == "com.instagram.android") "Instagram Reels" else "YouTube Shorts"
 
     override fun onInterrupt() {}
+
+
+
+    private fun setCounterVisible(show: Boolean) {
+        counterText.animate().cancel() // stop any fade that is still running
+
+        if (show) {
+            counterText.visibility = View.VISIBLE
+            counterText.animate()
+                .alpha(1f)
+                .setDuration(200)
+                .start()
+        } else {
+            counterText.animate()
+                .alpha(0f)
+                .setDuration(200)
+                .withEndAction { counterText.visibility = View.GONE } // hide only after the fade ends
+                .start()
+        }
+    }
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(finishSwipe)
+        handler.removeCallbacks(recheck)
+        counterText.animate().cancel()   // <-- add this
         scope.cancel()
         if (::counterText.isInitialized) windowManager.removeView(counterText)
     }
+
+
 }
+

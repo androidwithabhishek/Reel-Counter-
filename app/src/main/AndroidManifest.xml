@@ -26,7 +26,7 @@
         </activity>
 
 
-        <!-- Add inside <application> in AndroidManifest.xml -->
+
         <service
             android:name=".core.ReelCounterService"
             android:exported="false"

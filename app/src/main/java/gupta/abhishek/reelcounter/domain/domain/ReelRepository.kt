@@ -1,6 +1,6 @@
 package gupta.abhishek.reelcounter.domain.domain
 
-import gupta.abhishek.reelcounter.core.DayTime
+import gupta.abhishek.reelcounter.data.local.DayTime
 import gupta.abhishek.reelcounter.data.local.DayCount
 import gupta.abhishek.reelcounter.data.local.HourCount
 import gupta.abhishek.reelcounter.data.local.PlatformCount
