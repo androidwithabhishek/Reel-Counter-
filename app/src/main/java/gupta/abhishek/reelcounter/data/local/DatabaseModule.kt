@@ -1,9 +1,7 @@
-package gupta.abhishek.reelcounter.di
+package gupta.abhishek.reelcounter.data.local
 
 import android.content.Context
 import androidx.room.Room
-import gupta.abhishek.reelcounter.data.local.ReelDao
-import gupta.abhishek.reelcounter.data.local.ReelDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

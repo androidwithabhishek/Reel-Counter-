@@ -4,38 +4,23 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-// One row = one DIFFERENT reel/short the user really watched.
-// The same reel is never saved twice (reelKey is unique).
+
+// One row = one COUNTED watch of a reel/short.
+// The same reel can have several rows, one per repeat period (see ReelConfig).
+// Indexes: reelKey makes the duplicate check fast, watchedAt makes the day counters fast.
 @Entity(
     tableName = "reels",
-    indices = [Index(value = ["reelKey"], unique = true)],
+    indices = [Index(value = ["reelKey"]), Index(value = ["watchedAt"])],
 )
 data class ReelEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val reelKey: String, // SHA-256 of creator + caption, never empty
-    val app: String, // package name, e.g. com.instagram.android
-    val platform: String, // readable: "Instagram Reels" / "YouTube Shorts"
-    val creator: String? = null, // creator name as shown on screen
-    val caption: String? = null, // caption as shown on screen
-    val firstWatchedAt: Long = System.currentTimeMillis(), // when it was counted (used for stats)
-    val lastWatchedAt: Long = System.currentTimeMillis(), // last time we saw it again
-    val timesSeen: Int = 1,
-    // how many times the user came across it
+    val reelKey: String,   // SHA-256 identity of the reel (creator + caption + audio)
+    val app: String,       // package name, e.g. com.instagram.android
+    val platform: String,  // readable: "Instagram Reels" / "YouTube Shorts"
+    val creator: String? = null,
+    val caption: String? = null,
+    val watchedAt: Long,   // when it was counted (AppClock time, used for all stats)
+    val timesSeen: Int = 1, // 1 = counted once; +1 for every duplicate seen inside the period
 )
 
-// Result shapes for the statistics queries
 
-data class HourCount(
-    val hour: Int,
-    val count: Int,
-) // hour 0..23 -> reels in that hour
-
-data class DayCount(
-    val day: String,
-    val count: Int,
-) // "2026-10-13" -> reels that day
-
-data class PlatformCount(
-    val platform: String,
-    val count: Int,
-) // "Instagram Reels" -> reels

@@ -60,8 +60,22 @@ fun SetupScreen(
             modifier = Modifier.padding(top = 24.dp)
         )
         Text("Total saved: ${state.totalCount}", style = MaterialTheme.typography.bodyMedium)
-        OutlinedButton(onClick = { viewModel.clearAll() }) {
-            Text("Clear all")
+
+        // shown only after "Start new day" was used, so you know the clock is shifted
+        if (state.daysSkipped > 0) {
+            Text(
+                "Test mode: ${state.daysSkipped} day(s) skipped",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        // ---- testing tools ----
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = { viewModel.startNewDay() }) { Text("Start new day") }
+            OutlinedButton(onClick = { viewModel.clearAll() }) { Text("Delete all") }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -88,7 +102,7 @@ fun SetupScreen(
                     )
                     val seen = if (reel.timesSeen > 1) " • seen ${reel.timesSeen}x" else ""
                     Text(
-                        text = "${reel.app} • ${timeFormat.format(Date(reel.firstWatchedAt))}$seen",
+                        text = "${reel.app} • ${timeFormat.format(Date(reel.watchedAt))}$seen",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

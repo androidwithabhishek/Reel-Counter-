@@ -15,6 +15,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import dagger.hilt.android.AndroidEntryPoint
+import gupta.abhishek.reelcounter.data.local.ReelConfig // NEW
 import gupta.abhishek.reelcounter.domain.domain.ReelRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,14 +45,12 @@ class ReelCounterService : AccessibilityService() {
     private var gesturePkg = "" // app of the current swipe
     private val handler = Handler(Looper.getMainLooper())
 
-
-
-
-
+    // NEW: when the user left Instagram/YouTube (0 = user is inside the app right now)
+    private var leftAppAt = 0L
 
     // Delay (ms) after a count during which the SAME app can't count again.
     // Instagram needs it because it sometimes sends extra events for one reel.
-    // YouTube works fine, so 0 = no delay. Change 600 if it's too short/long.
+    // YouTube works fine, so 0 = no delay. Change 800 if it's too short/long.
     private val cooldownMs =
         mapOf(
             "com.instagram.android" to 800L,
@@ -66,9 +65,6 @@ class ReelCounterService : AccessibilityService() {
             "com.instagram.android",
             "com.google.android.youtube",
         )
-
-    private var lastWeakKey: String? = null
-    private var lastWeakTime = 0L
 
     // If ANY of these views exist on screen, we are on a Reels/Shorts screen.
     // These IDs are best guesses and can change when Instagram/YouTube update.
@@ -85,7 +81,7 @@ class ReelCounterService : AccessibilityService() {
     private val debugDump = true
 
     // A reel counts as WATCHED only if the user stays on it this long (in ms).
-    // Swiping away sooner = not counted. Change 2000 to make it stricter or looser.
+    // Swiping away sooner = not counted. Change 800 to make it stricter or looser.
     private val minWatchMs = 800L
     private var countSeq = 0 // goes up with every count; tells us if the user already swiped again
 
@@ -127,7 +123,7 @@ class ReelCounterService : AccessibilityService() {
                 setTextColor(Color.WHITE)
                 setBackgroundColor(0xCC000000.toInt())
                 setPadding(32, 16, 32, 16)
-                alpha = 0f                  // <-- add this
+                alpha = 0f // starts transparent, fades in on Reels/Shorts
                 visibility = View.GONE
             }
 
@@ -137,7 +133,7 @@ class ReelCounterService : AccessibilityService() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
                 PixelFormat.TRANSLUCENT,
             )
         params.gravity = Gravity.TOP or Gravity.END
@@ -151,13 +147,25 @@ class ReelCounterService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-            -> updateOverlay()
+                -> updateOverlay()
 
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> countScroll(event)
         }
     }
 
     private val recheck = Runnable { updateOverlay(force = true) }
+
+    // NEW: detects "user left the app for a while and came back" and starts a new session.
+    // A reel counted in an older session may be counted again (see ReelRepository.canCountAgain).
+    private fun trackAppSession(now: Long) {
+        if (inSupportedApp) {
+            val awayMs = if (leftAppAt == 0L) 0L else now - leftAppAt
+            if (awayMs >= ReelConfig.REOPEN_AFTER_SECONDS * 1000) repository.startNewSession()
+            leftAppAt = 0L
+        } else if (leftAppAt == 0L) {
+            leftAppAt = now // first moment we noticed the user is outside
+        }
+    }
 
     // Shows/hides the counter depending on the screen and the variable above
     private fun updateOverlay(force: Boolean = false) {
@@ -172,6 +180,7 @@ class ReelCounterService : AccessibilityService() {
         lastCheckTime = now
 
         val nowOnReels = isOnReelScreen() // also updates inSupportedApp
+        trackAppSession(now) // NEW: must run before the early return below
         val nowCounting = if (onlyCountReelsAndShorts) nowOnReels else inSupportedApp
         if (nowOnReels == onReelScreen && nowCounting == onCountingScreen) return
 
@@ -188,6 +197,7 @@ class ReelCounterService : AccessibilityService() {
             gesturePixels = 0
         }
         if (enteredReels) {
+            // the reel we land on counts too. Skip if we only left for under 2 seconds
             if (now - lastExitTime > 2000) addReels(currentPkg, 1)
         }
         if (leftReels) lastExitTime = now
@@ -316,13 +326,14 @@ class ReelCounterService : AccessibilityService() {
                 key = "$key|${SystemClock.uptimeMillis()}"
             }
 
-            // 2) save it; a reel already in the database is not added again, counter stays the same
+            // save it; the repository decides if it is new or a duplicate (day/hour/session rules)
             val isNew = repository.saveReel(pkg, platformName(pkg), info.creator, info.caption, key)
             logReel(pkg, info, if (isNew) "COUNTED (new reel)" else "NOT counted (already saved)")
         }
 
         if (debugDump) handler.postDelayed({ dumpScreen() }, 800) // wait for the new reel to load
     }
+
     // one line with everything, filter Logcat by: ReelInfo
     private fun logReel(
         pkg: String,
@@ -332,7 +343,8 @@ class ReelCounterService : AccessibilityService() {
         Log.d(
             "ReelInfo",
             "app=$pkg | creator=${info.creator} | caption=${info.caption?.take(80)} | audio=${info.audio?.take(40)} " +
-                    "| ad=${info.isAd} (${info.adLabel}) | weak=${info.weak} | key=${info.key?.take(12)} | $verdict",)
+                    "| ad=${info.isAd} (${info.adLabel}) | weak=${info.weak} | key=${info.key?.take(12)} | $verdict",
+        )
     }
 
     // ---------- debug: print the screen's views ----------
@@ -360,8 +372,6 @@ class ReelCounterService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-
-
     private fun setCounterVisible(show: Boolean) {
         counterText.animate().cancel() // stop any fade that is still running
 
@@ -384,11 +394,10 @@ class ReelCounterService : AccessibilityService() {
         super.onDestroy()
         handler.removeCallbacks(finishSwipe)
         handler.removeCallbacks(recheck)
-        counterText.animate().cancel()   // <-- add this
+        if (::counterText.isInitialized) {
+            counterText.animate().cancel()
+            windowManager.removeView(counterText)
+        }
         scope.cancel()
-        if (::counterText.isInitialized) windowManager.removeView(counterText)
     }
-
-
 }
-
