@@ -3,15 +3,19 @@ package gupta.abhishek.reelcounter.core
 import android.view.accessibility.AccessibilityNodeInfo
 import java.security.MessageDigest
 
+
+//loda bhin cod
+
+
 // Everything we learned about the reel that is on screen right now
 data class ReelInfo(
     val creator: String?, // creator name, null if not found
     val caption: String?, // caption text, null if not found
-    val audio: String?, // true if a "Sponsored"/"Ad" label is visible
-    val isAd: Boolean, // the label text that made us think it's an ad
-    val adLabel: String?, // SHA-256 of creator + caption, null if both missing
-    val key: String?,
-    val weak: Boolean,    // true = key built from creator only
+    val audio: String?, // audio/song line, null if not found
+    val isAd: Boolean, // true if a "Sponsored"/"Ad" label is visible
+    val adLabel: String?, // the label text that made us think it's an ad
+    val key: String?, // SHA-256 of creator + caption + audio, null if nothing found
+    val weak: Boolean, // true = key built from creator only
 )
 
 object ReelKeyReader {
@@ -21,6 +25,19 @@ object ReelKeyReader {
 
     private val adTexts = setOf("sponsored", "ad", "advertisement", "promoted", "visit advertiser")
     private val adIdWords = listOf("sponsored", "ad_badge")
+
+    // NEW: screen labels that are NOT real captions (e.g. the "Reels" header).
+    // A match is treated as "no caption", so the reel gets a creator-only (weak) ID.
+    private val junkCaptions = setOf(
+        "reels", "reel", "shorts", "following", "for you", "explore",
+        "home", "search", "camera", "friends", "more", "audio",
+    )
+
+    // NEW: junk = a known label, or too short to identify a reel
+    private fun isJunkCaption(t: String): Boolean {
+        val s = t.lowercase().trim()
+        return s in junkCaptions || s.length < 4
+    }
 
     fun read(root: AccessibilityNodeInfo): ReelInfo {
         var creator: String? = null
@@ -40,7 +57,8 @@ object ReelKeyReader {
 
                 if (id != null && !text.isNullOrEmpty()) {
                     if (creator == null && creatorWords.any { id.contains(it) }) creator = text
-                    if (caption == null && captionWords.any { id.contains(it) }) caption = text
+                    // NEW: skip junk labels so they never become the caption
+                    if (caption == null && captionWords.any { id.contains(it) } && !isJunkCaption(text)) caption = text
                     if (audio == null && audioWords.any { id.contains(it) }) audio = text
                 }
 
@@ -60,10 +78,10 @@ object ReelKeyReader {
         // Audio line, e.g. "Original audio · name"
         if (audio == null) audio = allTexts.firstOrNull { it.contains("audio", ignoreCase = true) && it.length > 8 }
 
-        // Caption: longest visible text that is not the creator, audio, or an ad label
+        // Caption: longest visible text that is not the creator, audio, an ad label, or junk
         if (caption == null) {
             caption = allTexts
-                .filter { it != creator && it != audio && it.length >= 15 && !isAdText(it) }
+                .filter { it != creator && it != audio && it.length >= 15 && !isAdText(it) && !isJunkCaption(it) } // NEW: junk filter
                 .maxByOrNull { it.length }
         }
 
