@@ -3,10 +3,6 @@ package gupta.abhishek.reelcounter.core
 import android.view.accessibility.AccessibilityNodeInfo
 import java.security.MessageDigest
 
-
-//loda bhin cod
-
-
 // Everything we learned about the reel that is on screen right now
 data class ReelInfo(
     val creator: String?, // creator name, null if not found
